@@ -1,0 +1,43 @@
+# Cloudflare API configuration
+cloudflare:
+  # Your Cloudflare API token with Zone:DNS:Edit permissions
+  # Generate at: https://dash.cloudflare.com/profile/api-tokens
+  apiToken: "your-cloudflare-api-token-here"
+  
+  # The Zone ID of your domain
+  # Found in the Overview tab of your domain in Cloudflare dashboard
+  zoneId: "your-zone-id-here"
+  
+  # The DNS record to update (e.g., "home.example.com")
+  recordName: "home.example.com"
+  
+  # The type of DNS record (usually "A" for IPv4 or "AAAA" for IPv6)
+  recordType: "A"
+
+# IP monitoring settings
+monitoring:
+  # How often to check for IP changes (in seconds)
+  # Default: 300 (5 minutes)
+  checkInterval: 300
+  
+  # How long to wait before retrying after a failure (in seconds)
+  # Default: 60 (1 minute)
+  retryInterval: 60
+  
+  # Maximum number of retries per attempt
+  # Default: 3
+  maxRetries: 3
+
+# Logging configuration
+logging:
+  # Log level (DEBUG, INFO, WARN, ERROR)
+  level: "INFO"
+  
+  # Log file location
+  file: "logs/ddns-updater.log"
+  
+  # Maximum size of each log file before rotation
+  maxSize: "10MB"
+  
+  # Number of rotated log files to keep
+  maxBackups: 5 
