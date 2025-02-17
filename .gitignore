@@ -1,6 +1,7 @@
 # Project specific
 mine/
 logs/
+dist/
 
 # Compiled class files
 *.class
