@@ -6,6 +6,7 @@ import com.project.cloudflare.DnsRecord;
 import com.project.config.DnsUpdaterConfig;
 import com.project.ip.IpAddressProvider;
 import com.project.ip.IpLookupException;
+import com.project.notifications.NotificationService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -21,16 +22,19 @@ public class IpMonitoringService {
     private final List<IpAddressProvider> ipProviders;
     private final CloudflareClient cloudflareClient;
     private final DnsUpdaterConfig config;
+    private final NotificationService notificationService;
     private final ScheduledExecutorService executor;
     
-    private InetAddress lastKnownIp;
+    private String currentIp;
 
     public IpMonitoringService(List<IpAddressProvider> ipProviders, 
                              CloudflareClient cloudflareClient,
-                             DnsUpdaterConfig config) {
+                             DnsUpdaterConfig config,
+                             NotificationService notificationService) {
         this.ipProviders = ipProviders;
         this.cloudflareClient = cloudflareClient;
         this.config = config;
+        this.notificationService = notificationService;
         this.executor = Executors.newSingleThreadScheduledExecutor();
     }
 
@@ -57,29 +61,30 @@ public class IpMonitoringService {
 
     private void checkIpAddress() {
         try {
-            InetAddress currentIp = getCurrentIpAddress();
-            if (currentIp == null) {
+            String newIp = getCurrentIpAddress();
+            if (newIp == null) {
                 logger.error("Failed to get current IP address from any provider");
                 return;
             }
 
-            if (lastKnownIp != null && currentIp.equals(lastKnownIp)) {
-                logger.debug("IP address unchanged: {}", currentIp.getHostAddress());
+            if (newIp.equals(currentIp)) {
+                logger.debug("IP hasn't changed: {}", newIp);
                 return;
             }
 
-            updateDnsRecord(currentIp);
-            lastKnownIp = currentIp;
+            updateDnsRecord(newIp);
+            currentIp = newIp;
+            notificationService.notifyIpChange(newIp);
         } catch (Exception e) {
             logger.error("Error during IP check", e);
         }
     }
 
-    private InetAddress getCurrentIpAddress() {
+    private String getCurrentIpAddress() {
         for (IpAddressProvider provider : ipProviders) {
             try {
-                InetAddress ip = provider.getCurrentIpAddress();
-                logger.debug("Got IP {} from provider {}", ip.getHostAddress(), provider.getProviderName());
+                String ip = provider.getCurrentIpAddress();
+                logger.debug("Got IP {} from provider {}", ip, provider.getProviderName());
                 return ip;
             } catch (IpLookupException e) {
                 logger.warn("Failed to get IP from provider {}: {}", 
@@ -89,7 +94,7 @@ public class IpMonitoringService {
         return null;
     }
 
-    private void updateDnsRecord(InetAddress newIp) throws CloudflareException {
+    private void updateDnsRecord(String newIp) throws CloudflareException {
         DnsRecord record = cloudflareClient.getDnsRecord(
             config.getCloudflare().getRecordName(),
             config.getCloudflare().getRecordType()

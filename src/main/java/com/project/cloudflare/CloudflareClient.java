@@ -14,6 +14,8 @@ import org.slf4j.LoggerFactory;
 
 import java.net.InetAddress;
 import java.io.IOException;
+import java.util.HashMap;
+import java.util.Map;
 
 public class CloudflareClient {
     private static final Logger logger = LoggerFactory.getLogger(CloudflareClient.class);
@@ -70,39 +72,46 @@ public class CloudflareClient {
         }
     }
 
-    public void updateDnsRecord(String recordId, String recordName, String recordType, 
-                              InetAddress newIp) throws CloudflareException {
-        String url = String.format("%s/zones/%s/dns_records/%s", API_BASE, zoneId, recordId);
-        String jsonBody = String.format(
-            "{\"type\":\"%s\",\"name\":\"%s\",\"content\":\"%s\"}",
-            recordType, recordName, newIp.getHostAddress()
-        );
+    public void updateDnsRecord(String id, 
+                              String name, 
+                              String type, 
+                              String content) throws CloudflareException {
+        try {
+            String url = String.format("%s/zones/%s/dns_records/%s", API_BASE, zoneId, id);
+            
+            Map<String, String> data = new HashMap<>();
+            data.put("type", type);
+            data.put("name", name);
+            data.put("content", content);
+            
+            String json = objectMapper.writeValueAsString(data);
 
-        try (CloseableHttpClient client = HttpClients.createDefault()) {
-            HttpPut request = new HttpPut(url);
-            request.setHeader("Authorization", "Bearer " + apiToken);
-            request.setHeader("Content-Type", "application/json");
-            request.setEntity(new StringEntity(jsonBody, ContentType.APPLICATION_JSON));
+            try (CloseableHttpClient client = HttpClients.createDefault()) {
+                HttpPut request = new HttpPut(url);
+                request.setHeader("Authorization", "Bearer " + apiToken);
+                request.setHeader("Content-Type", "application/json");
+                request.setEntity(new StringEntity(json, ContentType.APPLICATION_JSON));
 
-            client.execute(request, response -> {
-                try {
-                    String jsonResponse = EntityUtils.toString(response.getEntity());
-                    if (response.getCode() != 200) {
-                        throw new RuntimeException(new CloudflareException("Failed to update DNS record. Status: " + response.getCode() 
-                            + ", Response: " + jsonResponse));
+                client.execute(request, response -> {
+                    try {
+                        String jsonResponse = EntityUtils.toString(response.getEntity());
+                        if (response.getCode() != 200) {
+                            throw new RuntimeException(new CloudflareException("Failed to update DNS record. Status: " + response.getCode() 
+                                + ", Response: " + jsonResponse));
+                        }
+
+                        JsonNode root = objectMapper.readTree(jsonResponse);
+                        if (!root.path("success").asBoolean()) {
+                            throw new RuntimeException(new CloudflareException("API request failed: " + jsonResponse));
+                        }
+                        
+                        logger.info("Successfully updated DNS record {} to {}", name, content);
+                        return null;
+                    } catch (IOException e) {
+                        throw new RuntimeException("Error processing response", e);
                     }
-
-                    JsonNode root = objectMapper.readTree(jsonResponse);
-                    if (!root.path("success").asBoolean()) {
-                        throw new RuntimeException(new CloudflareException("API request failed: " + jsonResponse));
-                    }
-                    
-                    logger.info("Successfully updated DNS record {} to {}", recordName, newIp.getHostAddress());
-                    return null;
-                } catch (IOException e) {
-                    throw new RuntimeException("Error processing response", e);
-                }
-            });
+                });
+            }
         } catch (Exception e) {
             throw new CloudflareException("Error updating DNS record", e);
         }

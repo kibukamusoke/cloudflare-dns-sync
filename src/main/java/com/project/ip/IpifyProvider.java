@@ -15,33 +15,25 @@ public class IpifyProvider implements IpAddressProvider {
     private static final String API_URL = "https://api.ipify.org";
 
     @Override
-    public InetAddress getCurrentIpAddress() throws IpLookupException {
+    public String getCurrentIpAddress() throws IpLookupException {
         try (CloseableHttpClient client = HttpClients.createDefault()) {
             HttpGet request = new HttpGet(API_URL);
             
             return client.execute(request, response -> {
-                try {
-                    if (response.getCode() != 200) {
-                        throw new RuntimeException(new IpLookupException(
-                            "Failed to get IP address from ipify. Status code: " + response.getCode()));
-                    }
-                    
-                    String ip = EntityUtils.toString(response.getEntity()).trim();
-                    logger.debug("Retrieved IP address from ipify: {}", ip);
-                    try {
-                        return InetAddress.getByName(ip);
-                    } catch (IOException e) {
-                        throw new RuntimeException(new IpLookupException("Invalid IP address format", e));
-                    }
-                } catch (IOException e) {
-                    throw new RuntimeException(new IpLookupException("Error reading response", e));
+                int status = response.getCode();
+                if (status != 200) {
+                    throw new RuntimeException("API request failed with status: " + status);
                 }
+                
+                String ip = EntityUtils.toString(response.getEntity()).trim();
+                logger.debug("Retrieved IP address from ipify: {}", ip);
+                return ip;
             });
         } catch (Exception e) {
-            if (e.getCause() instanceof IpLookupException) {
-                throw (IpLookupException) e.getCause();
+            if (e.getMessage() != null && e.getMessage().startsWith("API request failed")) {
+                throw new IpLookupException(e.getMessage());
             }
-            throw new IpLookupException("Error getting IP address from ipify", e);
+            throw new IpLookupException("Failed to get IP address", e);
         }
     }
 

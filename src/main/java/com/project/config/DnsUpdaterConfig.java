@@ -7,9 +7,10 @@ import java.io.File;
 import java.io.IOException;
 
 public class DnsUpdaterConfig {
-    private CloudflareConfig cloudflare;
-    private MonitoringConfig monitoring;
-    private LoggingConfig logging;
+    private CloudflareConfig cloudflare = new CloudflareConfig();
+    private MonitoringConfig monitoring = new MonitoringConfig();
+    private LoggingConfig logging = new LoggingConfig();
+    private NotificationsConfig notifications = new NotificationsConfig();
 
     public static DnsUpdaterConfig loadFromFile(String path) throws IOException {
         ObjectMapper mapper = new ObjectMapper(new YAMLFactory());
@@ -39,6 +40,14 @@ public class DnsUpdaterConfig {
 
     public void setLogging(LoggingConfig logging) {
         this.logging = logging;
+    }
+
+    public NotificationsConfig getNotifications() {
+        return notifications;
+    }
+
+    public void setNotifications(NotificationsConfig notifications) {
+        this.notifications = notifications;
     }
 
     public static class CloudflareConfig {

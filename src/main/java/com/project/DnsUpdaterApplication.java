@@ -5,6 +5,7 @@ import com.project.config.DnsUpdaterConfig;
 import com.project.core.IpMonitoringService;
 import com.project.ip.IpAddressProvider;
 import com.project.ip.IpifyProvider;
+import com.project.notifications.NotificationService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -34,8 +35,11 @@ public class DnsUpdaterApplication {
             // Add more providers here as needed
         );
 
+        // Create notification service
+        NotificationService notificationService = new NotificationService(config);
+
         // Create monitoring service
-        monitoringService = new IpMonitoringService(ipProviders, cloudflareClient, config);
+        monitoringService = new IpMonitoringService(ipProviders, cloudflareClient, config, notificationService);
     }
 
     public void start() {

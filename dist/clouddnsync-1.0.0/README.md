@@ -26,10 +26,18 @@ Linux:
 
 Quick Start
 ----------
-1. Build the project (for developers):
-   $ git clone https://github.com/kibukamusoke/dns-updater
-   $ cd dns-updater
+1. Installation:
+   # Option 1: Download release (Recommended)
+   $ wget https://github.com/kibukamusoke/cloudflare-dns-sync/releases/download/v1.0.0/clouddnsync-1.0.0.tar.gz
+   $ tar -xzf clouddnsync-1.0.0.tar.gz
+   $ cd clouddnsync-1.0.0
+   $ sudo ./install.sh
+
+   # Option 2: Build from source
+   $ git clone https://github.com/kibukamusoke/cloudflare-dns-sync
+   $ cd cloudflare-dns-sync
    $ mvn clean package
+   $ sudo ./install.sh
 
 2. Create installation directory:
    $ mkdir dns-updater-install

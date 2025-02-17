@@ -1,7 +1,5 @@
 package com.project.ip;
 
-import java.net.InetAddress;
-
 public interface IpAddressProvider {
     /**
      * Retrieves the current public IP address.
@@ -9,7 +7,7 @@ public interface IpAddressProvider {
      * @return The current public IP address
      * @throws IpLookupException if the IP address lookup fails
      */
-    InetAddress getCurrentIpAddress() throws IpLookupException;
+    String getCurrentIpAddress() throws IpLookupException;
     
     /**
      * Returns the name of this IP address provider.

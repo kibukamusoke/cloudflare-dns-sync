@@ -28,6 +28,14 @@ monitoring:
   # Default: 3
   maxRetries: 3
 
+# Notifications
+notifications:
+  telegram:
+    enabled: false
+    botToken: "your-bot-token-here"
+    chatId: "your-chat-id-here"
+    message: "IP address changed to: {ip}"
+
 # Logging configuration
 logging:
   # Log level (DEBUG, INFO, WARN, ERROR)

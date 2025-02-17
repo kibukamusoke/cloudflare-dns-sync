@@ -6,6 +6,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.0.0] - 2024-02-17
 ### Added
+- IP change detection to prevent unnecessary updates
+- Optional Telegram notifications when IP changes
 - Initial release
 - Automatic IP address monitoring
 - Cloudflare DNS integration
