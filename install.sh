@@ -1,3 +1,23 @@
+#!/bin/bash
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m' # No Color
+
+# Check and install Java if needed
+echo "Checking Java installation..."
+if ! command -v java &> /dev/null; then
+    echo -e "${YELLOW}Java not found. Installing OpenJDK 17...${NC}"
+    apt-get update
+    apt-get install -y openjdk-17-jre-headless
+    if [ $? -ne 0 ]; then
+        echo -e "${RED}Failed to install Java${NC}"
+        exit 1
+    fi
+fi
+
 # Installation directory
 INSTALL_DIR="/opt/clouddnsync"
 SERVICE_NAME="clouddnsync"
@@ -54,6 +74,9 @@ else
     fi
 fi
 
+# Configure the application first
+configure_dns_updater
+
 # Create systemd service
 echo "Creating systemd service..."
 cat > "/etc/systemd/system/$SERVICE_NAME.service" << EOF
@@ -65,7 +88,9 @@ After=network.target
 Type=simple
 User=nobody
 WorkingDirectory=$INSTALL_DIR
-ExecStart=/usr/bin/java -jar $INSTALL_DIR/clouddnsync.jar
+ExecStart=/usr/bin/java -jar $INSTALL_DIR/clouddnsync.jar --debug
+StandardOutput=append:/var/log/clouddnsync.log
+StandardError=append:/var/log/clouddnsync.log
 Restart=always
 RestartSec=10
 
@@ -75,15 +100,27 @@ EOF
 
 # Set permissions
 echo "Setting permissions..."
+mkdir -p /var/log
+touch /var/log/clouddnsync.log
 chown -R nobody:nogroup "$INSTALL_DIR"
+chown nobody:nogroup /var/log/clouddnsync.log
 chmod 640 "$INSTALL_DIR/config/config.yml"
 chmod 755 "$INSTALL_DIR/clouddnsync.jar"
-
-# Configure the application
-configure_dns_updater
+chmod 644 /var/log/clouddnsync.log
 
 # Enable and start service
 echo "Starting service..."
+if [ ! -f "$INSTALL_DIR/clouddnsync.jar" ]; then
+    echo -e "${RED}JAR file not found at $INSTALL_DIR/clouddnsync.jar${NC}"
+    exit 1
+fi
+
+echo "Verifying Java can execute the JAR..."
+if ! java -jar "$INSTALL_DIR/clouddnsync.jar" --version &> /dev/null; then
+    echo -e "${RED}Failed to execute JAR file. Check Java installation.${NC}"
+    exit 1
+fi
+
 systemctl daemon-reload
 systemctl enable "$SERVICE_NAME"
 systemctl start "$SERVICE_NAME"

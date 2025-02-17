@@ -1,5 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <configuration>
+    <!-- Support for command line log level override -->
+    <property name="LOG_LEVEL" value="${logging.level.root:-INFO}" />
+
     <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
         <encoder>
             <pattern>%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n</pattern>
@@ -19,7 +22,7 @@
         </encoder>
     </appender>
 
-    <root level="INFO">
+    <root level="${LOG_LEVEL}">
         <appender-ref ref="CONSOLE" />
         <appender-ref ref="FILE" />
     </root>
