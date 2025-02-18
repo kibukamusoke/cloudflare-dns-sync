@@ -27,15 +27,10 @@ JAR_URL="https://github.com/kibukamusoke/cloudflare-dns-sync/releases/download/v
 IS_UPDATE=false
 if [ -f "$INSTALL_DIR/config/config.yml" ]; then
     IS_UPDATE=true
-    echo -e "${YELLOW}Existing installation detected.${NC}"
-    read -p "Would you like to keep the existing configuration? (Y/n): " KEEP_CONFIG
-    if [[ "$KEEP_CONFIG" =~ ^[Nn]$ ]]; then
-        IS_UPDATE=false
-        echo -e "${YELLOW}Backing up old configuration to config.yml.backup...${NC}"
-        cp "$INSTALL_DIR/config/config.yml" "$INSTALL_DIR/config/config.yml.backup"
-    else
-        echo -e "${GREEN}Keeping existing configuration.${NC}"
-    fi
+    echo -e "${YELLOW}Existing installation detected. Current values will be shown in brackets.${NC}"
+    echo -e "${YELLOW}Press Enter to keep the current value, or type a new value.${NC}\n"
+    # Backup the existing config
+    cp "$INSTALL_DIR/config/config.yml" "$INSTALL_DIR/config/config.yml.backup"
 fi
 
 echo -e "${GREEN}Dynamic DNS Updater Installation Script${NC}"
@@ -54,9 +49,6 @@ configure_dns_updater() {
 
     # Read existing configuration if available
     if [ "$IS_UPDATE" = true ]; then
-        echo -e "${YELLOW}Current configuration values will be shown in brackets.${NC}"
-        echo -e "${YELLOW}Press Enter to keep the current value, or type a new value.${NC}\n"
-        
         # Extract current values using grep and cut
         CF_TOKEN=$(grep "apiToken:" "$INSTALL_DIR/config/config.yml" | cut -d'"' -f2)
         ZONE_ID=$(grep "zoneId:" "$INSTALL_DIR/config/config.yml" | cut -d'"' -f2)
@@ -77,27 +69,54 @@ configure_dns_updater() {
     ZONE_ID=${NEW_ZONE_ID:-$ZONE_ID}
     RECORD_NAME=${NEW_RECORD_NAME:-$RECORD_NAME}
     
-    if [ "$TELEGRAM_ENABLED" = "true" ]; then
-        echo -e "\n${YELLOW}Telegram notifications are currently enabled.${NC}"
-        read -p "Would you like to modify Telegram settings? (y/N): " SETUP_TELEGRAM
-    else
-        echo -e "\n${YELLOW}Would you like to set up Telegram notifications? (y/N):${NC}"
-        read -p "" SETUP_TELEGRAM
-    fi
-    
-    if [[ "$SETUP_TELEGRAM" =~ ^[Yy]$ ]]; then
-        TELEGRAM_ENABLED="true"
-        echo -e "\n${YELLOW}Please enter your Telegram configuration:${NC}"
-        read -p "Bot Token [$TELEGRAM_TOKEN]: " NEW_BOT_TOKEN
-        read -p "Chat ID [$TELEGRAM_CHAT_ID]: " NEW_CHAT_ID
-        read -p "Notification message [$TELEGRAM_MESSAGE]: " NEW_MSG
+    echo -e "\n${YELLOW}Telegram configuration:${NC}"
+    read -p "Bot Token [$TELEGRAM_TOKEN]: " NEW_BOT_TOKEN
+    read -p "Chat ID [$TELEGRAM_CHAT_ID]: " NEW_CHAT_ID
+    read -p "Notification message [$TELEGRAM_MESSAGE]: " NEW_MSG
 
-        # Use new values if provided, otherwise keep existing
-        TELEGRAM_TOKEN=${NEW_BOT_TOKEN:-$TELEGRAM_TOKEN}
-        TELEGRAM_CHAT_ID=${NEW_CHAT_ID:-$TELEGRAM_CHAT_ID}
-        TELEGRAM_MESSAGE=${NEW_MSG:-$TELEGRAM_MESSAGE}
+    # Use new values if provided, otherwise keep existing
+    TELEGRAM_TOKEN=${NEW_BOT_TOKEN:-$TELEGRAM_TOKEN}
+    TELEGRAM_CHAT_ID=${NEW_CHAT_ID:-$TELEGRAM_CHAT_ID}
+    TELEGRAM_MESSAGE=${NEW_MSG:-$TELEGRAM_MESSAGE}
+
+    # Check Telegram configuration
+    if [ -z "$TELEGRAM_TOKEN" ] || [ -z "$TELEGRAM_CHAT_ID" ]; then
+        TELEGRAM_ENABLED="false"
+        echo -e "\n${YELLOW}Telegram notifications disabled. Missing required settings:${NC}"
+        [ -z "$TELEGRAM_TOKEN" ] && echo -e "${YELLOW}- Bot token not provided${NC}"
+        [ -z "$TELEGRAM_CHAT_ID" ] && echo -e "${YELLOW}- Chat ID not provided${NC}"
+        echo -e "${YELLOW}You can enable Telegram later by updating $INSTALL_DIR/config/config.yml${NC}"
+    else
+        TELEGRAM_ENABLED="true"
+        echo -e "\n${GREEN}Telegram notifications enabled${NC}"
+        echo -e "- Bot token: ${TELEGRAM_TOKEN:0:5}...${TELEGRAM_TOKEN: -5}"
+        echo -e "- Chat ID: $TELEGRAM_CHAT_ID"
+        echo -e "- Message template: $TELEGRAM_MESSAGE"
+        
+        echo -e "\n${YELLOW}Sending test message...${NC}"
+        TEST_MESSAGE="CloudDNSync installation test message"
+        TEST_URL="https://api.telegram.org/bot$TELEGRAM_TOKEN/sendMessage"
+        RESPONSE=$(curl -s --connect-timeout 5 --max-time 10 -X POST "$TEST_URL" \
+            -d "chat_id=$TELEGRAM_CHAT_ID" \
+            -d "text=$TEST_MESSAGE" \
+            -d "parse_mode=HTML")
+
+        CURL_EXIT=$?
+        if [ $CURL_EXIT -eq 28 ]; then
+            echo -e "${YELLOW}Request timed out. Proceeding with installation.${NC}"
+            echo -e "${YELLOW}You can verify Telegram notifications when the service is running.${NC}"
+        elif [ $CURL_EXIT -eq 0 ] && echo "$RESPONSE" | grep -q '"ok":true'; then
+            echo -e "${GREEN}Test message sent successfully! Check your Telegram.${NC}"
+        else
+            echo -e "${RED}Failed to send test message. Error code: $CURL_EXIT${NC}"
+            if [ ! -z "$RESPONSE" ]; then
+                echo -e "${YELLOW}Response: $RESPONSE${NC}"
+            fi
+            echo -e "${YELLOW}The configuration will be saved, but you may need to troubleshoot Telegram settings.${NC}"
+        fi
+        echo -e "\n${YELLOW}The application will send notifications when IP changes${NC}"
+        echo -e "${YELLOW}You can modify these settings in $INSTALL_DIR/config/config.yml${NC}"
     fi
-    
     # Create config directory
     mkdir -p "$INSTALL_DIR/config"
     
@@ -127,57 +146,6 @@ logging:
   maxSize: "10MB"
   maxBackups: 5
 EOF
-
-    if [[ "$SETUP_TELEGRAM" =~ ^[Yy]$ ]]; then
-        echo -e "\n${YELLOW}Testing Telegram configuration...${NC}"
-        echo "Attempting to send test message..."
-        TEST_URL="https://api.telegram.org/bot$TELEGRAM_TOKEN/sendMessage"
-        TEST_MSG="CloudDNSync installation test message"
-        
-        # Debug output
-        echo "Debug: Using bot token: ${TELEGRAM_TOKEN:0:5}...${TELEGRAM_TOKEN: -5}"
-        echo "Debug: Using chat ID: $TELEGRAM_CHAT_ID"
-        echo "Debug: Test URL: $TEST_URL"
-        echo "Debug: Test message: $TEST_MSG"
-        
-        # Properly encode the JSON payload
-        JSON_DATA="{\"chat_id\":\"$TELEGRAM_CHAT_ID\",\"text\":\"$TEST_MSG\"}"
-        RESPONSE=$(curl -s \
-            --connect-timeout 10 \
-            --max-time 10 \
-            -X POST \
-            -H "Content-Type: application/json" \
-            -d "$JSON_DATA" \
-            "$TEST_URL")
-        CURL_EXIT=$?
-        
-        # Debug curl result
-        echo "Debug: curl exit code: $CURL_EXIT"
-        echo "Debug: JSON payload: $JSON_DATA"
-        echo "Debug: Raw response: $RESPONSE"
-        
-        if echo "$RESPONSE" | grep -q '"ok":true'; then
-            echo -e "${GREEN}Telegram configuration successful! Check your Telegram for a test message.${NC}"
-        else
-            echo -e "${RED}Failed to send Telegram test message.${NC}"
-            if [ -z "$RESPONSE" ]; then
-                echo -e "${YELLOW}No response received from Telegram API${NC}"
-            else
-                echo -e "${YELLOW}API Response: $RESPONSE${NC}"
-            fi
-
-            # Check common issues
-            if [[ "$RESPONSE" == *"Unauthorized"* ]]; then
-                echo "Error: Invalid bot token"
-            elif [[ "$RESPONSE" == *"Bad Request: chat not found"* ]]; then
-                echo "Error: Invalid chat ID"
-            elif [[ "$RESPONSE" == *"Bad Request: message text is empty"* ]]; then
-                echo "Error: Empty message text"
-            fi
-
-            echo "You can update these settings later in $INSTALL_DIR/config/config.yml"
-        fi
-    fi
 }
 
 # Create installation directory
@@ -249,12 +217,37 @@ systemctl daemon-reload
 systemctl enable "$SERVICE_NAME"
 systemctl start "$SERVICE_NAME"
 
+# Verify service file
+if [ ! -f "$INSTALL_DIR/clouddnsync.jar" ]; then
+    echo -e "${RED}JAR file not found at $INSTALL_DIR/clouddnsync.jar${NC}"
+    exit 1
+fi
+
+echo "Verifying Java can execute the JAR..."
+if ! java -jar "$INSTALL_DIR/clouddnsync.jar" --version &> /dev/null; then
+    echo -e "${RED}Failed to execute JAR file. Check Java installation.${NC}"
+    exit 1
+fi
+
+systemctl daemon-reload
+systemctl enable "$SERVICE_NAME"
+systemctl start "$SERVICE_NAME"
+
+# Verify service is enabled for auto-start
+if ! systemctl is-enabled --quiet "$SERVICE_NAME"; then
+    echo -e "${RED}Warning: Failed to enable service for auto-start${NC}"
+    echo -e "Try manually: ${YELLOW}sudo systemctl enable $SERVICE_NAME${NC}"
+else
+    echo -e "${GREEN}Service enabled for auto-start on boot${NC}"
+fi
+
 # Check service status
 if systemctl is-active --quiet "$SERVICE_NAME"; then
     echo -e "${GREEN}Installation successful!${NC}"
     echo -e "Service is running. Check status with: ${YELLOW}systemctl status $SERVICE_NAME${NC}"
     echo -e "View logs with: ${YELLOW}journalctl -u $SERVICE_NAME -f${NC}"
     echo -e "Application logs: ${YELLOW}tail -f $INSTALL_DIR/logs/clouddnsync.log${NC}"
+    echo -e "Service will automatically start on system boot"
 else
     echo -e "${RED}Service failed to start. Please check logs:${NC}"
     echo -e "${YELLOW}systemctl status $SERVICE_NAME${NC}"
