@@ -32,8 +32,8 @@ monitoring:
 notifications:
   telegram:
     enabled: false
-    botToken: "your-bot-token-here"
-    chatId: "your-chat-id-here"
+    botToken: "your-bot-token"
+    chatId: "your-chat-id"
     message: "IP address changed to: {ip}"
 
 # Logging configuration

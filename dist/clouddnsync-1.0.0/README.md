@@ -23,6 +23,10 @@ Linux:
   * API Token with Zone:DNS:Edit permissions
   * Zone ID
   * Domain configured in Cloudflare
+- (Optional) Telegram bot for notifications:
+  * Telegram account
+  * Bot token from @BotFather
+  * Chat ID where notifications will be sent
 
 Quick Start
 ----------
@@ -64,15 +68,97 @@ cloudflare:
   recordType: "A"
 
 monitoring:
-  checkInterval: 300  # seconds
-  retryInterval: 60   # seconds
-  maxRetries: 3
+  # How often to check for IP changes
+  checkInterval: 300  # Check every 5 minutes
+  
+  # How long to wait before retrying after a failure
+  retryInterval: 60   # Wait 60 seconds between retry attempts
+  
+  # Maximum number of retries per attempt
+  maxRetries: 3      # Try up to 3 times if an attempt fails
+
+# Example retry scenario:
+# 1. IP check fails
+# 2. Wait 60 seconds (retryInterval)
+# 3. Try again, fails again
+# 4. Wait 60 seconds
+# 5. Try one last time
+# 6. If still failing, wait 5 minutes (checkInterval) and start over
+
+notifications:
+  telegram:
+    enabled: false    # Set to true to enable Telegram notifications
+    botToken: "your-bot-token"
+    chatId: "your-chat-id"
+    message: "IP address changed to: {ip}"
 
 logging:
   level: "INFO"
   file: "logs/dns-updater.log"
   maxSize: "10MB"
   maxBackups: 5
+
+Telegram Setup
+-------------
+1. Create a Telegram Bot:
+   * Open Telegram and search for @BotFather
+   * Send /newbot command
+   * Follow instructions to create your bot
+   * Choose a name for your bot (e.g., "My Home DNS Bot")
+   * Choose a username for your bot (must end in 'bot', e.g., "my_home_dns_bot")
+   * Save the HTTP API token provided (this is your botToken)
+   * The token looks like: "1234567890:ABCdefGHIjklMNOpqrsTUVwxyz"
+
+2. Get your Chat ID:
+   * Start a chat with your new bot
+   * Click the "Start" button or send "/start"
+   * Send any message to the bot
+   * Visit: https://api.telegram.org/bot<YOUR-BOT-TOKEN>/getUpdates
+   * Replace <YOUR-BOT-TOKEN> with the token from step 1
+   * Look for "chat":{"id":NUMBERS} in the response
+   * The chat ID will be a number like "123456789" (can be negative)
+   * Save this number (this is your chatId)
+
+3. Enable notifications:
+   * Edit /opt/dns-updater/config/config.yml
+   * Set notifications.telegram.enabled to true
+   * Add your botToken and chatId
+   * Customize the message if desired
+   * Message can include {ip} placeholder which will be replaced with the new IP
+   * Restart the service: sudo systemctl restart dns-updater
+
+Example configuration:
+```yaml
+notifications:
+  telegram:
+    enabled: true
+    botToken: "1234567890:ABCdefGHIjklMNOpqrsTUVwxyz"
+    chatId: "123456789"
+    message: "🏠 Home IP changed to: {ip}"
+```
+
+Telegram Troubleshooting
+----------------------
+1. Bot not responding:
+   - Verify bot token is correct
+   - Make sure you started a chat with the bot
+   - Check if bot appears online in Telegram
+
+2. Not receiving notifications:
+   - Verify chatId is correct
+   - Check if notifications.telegram.enabled is true
+   - Look for Telegram-related errors in logs:
+     $ sudo tail -f /opt/dns-updater/logs/dns-updater.log | grep -i telegram
+
+3. API errors:
+   - Test bot token: Visit https://api.telegram.org/bot<YOUR-BOT-TOKEN>/getMe
+   - Should return {"ok":true, ...}
+   - If not, token is invalid or bot was deleted
+
+4. Message formatting:
+   - Basic text and emojis are supported
+   - Avoid special characters in message template
+   - Test message format in Telegram before using
 
 Service Management
 ----------------
@@ -109,6 +195,10 @@ Troubleshooting
    - Check network connectivity
    - Verify API token permissions
    - Look for errors in /opt/dns-updater/logs/dns-updater.log
+   - Note: On network errors, the application will:
+     * Retry up to 3 times with 60-second intervals
+     * If all retries fail, wait 5 minutes and try again
+     * The service will keep running even during network outages
 
 3. Permission issues:
    - Check file ownership: ls -l /opt/dns-updater
