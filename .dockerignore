@@ -1,0 +1,21 @@
+# Build output
+target/
+dist/
+*.jar
+
+# Local config / secrets — never bake these into the image
+mine/
+config/config.yml
+logs/
+
+# Git / IDE / OS cruft
+.git/
+.gitignore
+.idea/
+.vscode/
+*.iml
+.DS_Store
+
+# Docs (not needed in the build context)
+*.md
+README.txt

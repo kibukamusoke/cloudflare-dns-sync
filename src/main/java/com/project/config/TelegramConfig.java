@@ -4,7 +4,7 @@ public class TelegramConfig {
     private boolean enabled = false;
     private String botToken;
     private String chatId;
-    private String message = "IP address changed to: {ip}";
+    private String message = "IP address for {record} changed to: {ip}";
 
     // Getters and setters
     public boolean isEnabled() { return enabled; }

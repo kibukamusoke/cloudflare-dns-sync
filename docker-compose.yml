@@ -1,0 +1,22 @@
+services:
+  clouddnsync:
+    # Pull the published image from Docker Hub.
+    image: kibukamusoke/clouddnsync:1.0.0
+    # For local development, build from source instead of pulling:
+    # build: .
+    container_name: clouddnsync
+    restart: unless-stopped
+    volumes:
+      # Your config, mounted read-only from the host.
+      - ./config:/app/config:ro
+      # Logs go to a named volume so the unprivileged container user can write
+      # to them (a host bind mount would be owned by the host UID and fail).
+      # Inspect with: docker compose exec clouddnsync cat logs/clouddnsync.log
+      # (console logs are also available via `docker compose logs -f`).
+      - clouddnsync-logs:/app/logs
+    # IPv6 lookups (AAAA records) require the container to have IPv6 access.
+    # Uncomment if you manage AAAA records and your host/network supports it:
+    # network_mode: host
+
+volumes:
+  clouddnsync-logs:

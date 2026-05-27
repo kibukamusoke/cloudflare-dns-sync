@@ -1,223 +1,168 @@
-Dynamic DNS Updater for Cloudflare
-=================================
+# CloudDNSync — Dynamic DNS Updater for Cloudflare
 
-Automatically update your Cloudflare DNS records when your IP address changes. Perfect for home servers, remote access, and dynamic IP setups.
+Automatically keep your Cloudflare DNS records pointed at your current public IP. Perfect for home servers, remote access, and any setup with a dynamic IP.
 
-Features
---------
-* Automatic IP address monitoring
-* Cloudflare DNS integration
-* Runs as a system service
-* Configurable check intervals
-* Detailed logging
-* Supports Linux systems (Windows support coming soon)
+## Features
 
-Prerequisites
-------------
-Linux:
-- Ubuntu/Debian-based system
-- Java 17 or later (automatically installed if missing)
-- Root/sudo access
-- Internet connection
-- Cloudflare account with:
-  * API Token with Zone:DNS:Edit permissions
-  * Zone ID
-  * Domain configured in Cloudflare
-- (Optional) Telegram bot for notifications:
-  * Telegram account
-  * Bot token from @BotFather
-  * Chat ID where notifications will be sent
+- Automatic public-IP monitoring with provider fallback (ipify → icanhazip, all over HTTPS)
+- **Multiple records across multiple zones / domains** from a single instance
+- IPv4 (`A`) and IPv6 (`AAAA`) records
+- Cloudflare is treated as the source of truth, so restarts never cause spurious updates or notifications
+- Configurable retry behaviour on lookup failures
+- Optional Telegram notifications when a record changes
+- Runs as a **systemd service** or in **Docker**
+- Rotating file logs
 
-Quick Start
-----------
-1. Installation:
-   # Option 1: Download release (Recommended)
-   $ wget https://github.com/kibukamusoke/cloudflare-dns-sync/releases/download/v1.0.0/clouddnsync-1.0.0.tar.gz
-   $ tar -xzf clouddnsync-1.0.0.tar.gz
-   $ cd clouddnsync-1.0.0
-   $ sudo ./install.sh
+## Requirements
 
-   # Option 2: Build from source
-   $ git clone https://github.com/kibukamusoke/cloudflare-dns-sync
-   $ cd cloudflare-dns-sync
-   $ mvn clean package
-   $ sudo ./install.sh
+- A Cloudflare account with:
+  - An API token with `Zone:DNS:Edit` permission (one token can cover several zones)
+  - The Zone ID of each domain you want to update (Domain → Overview in the dashboard)
+- For the systemd install: an Ubuntu/Debian host with root access (Java 17 is installed automatically if missing)
+- For Docker: Docker and Docker Compose
 
-2. Create installation directory:
-   $ mkdir dns-updater-install
-   $ cp target/dynamic-dns-updater-1.0-SNAPSHOT-jar-with-dependencies.jar dns-updater-install/dns-updater.jar
-   $ cp install-dns-updater.sh dns-updater-install/
-   $ chmod +x dns-updater-install/install-dns-updater.sh
+## Configuration
 
-3. Run the installation script:
-   $ sudo ./install-dns-updater.sh
+CloudDNSync reads a single YAML file. The default location is `config/config.yml` (relative to the working directory); override it with the `CONFIG_PATH` env var or by passing the path as the first argument.
 
-4. Follow the prompts to enter your Cloudflare configuration:
-   - API Token (from Cloudflare dashboard)
-   - Zone ID (from Cloudflare domain overview)
-   - DNS Record Name (e.g., home.example.com)
-
-Configuration
-------------
-The configuration file is located at /opt/dns-updater/config/config.yml:
-
+```yaml
 cloudflare:
-  apiToken: "your-api-token"
-  zoneId: "your-zone-id"
-  recordName: "your.domain.com"
-  recordType: "A"
+  # Account-wide token, used for every record unless one overrides it.
+  apiToken: "your-cloudflare-api-token"
+
+  # One or more records, in any zone / any domain.
+  records:
+    - zoneId: "zone-id-for-example-com"
+      recordName: "home.example.com"
+      recordType: "A"
+
+    - zoneId: "zone-id-for-example-org"
+      recordName: "vpn.example.org"
+      recordType: "A"
+
+    - zoneId: "zone-id-for-example-net"
+      recordName: "ipv6.example.net"
+      recordType: "AAAA"
+      apiToken: "optional-per-record-token"   # overrides cloudflare.apiToken
 
 monitoring:
-  # How often to check for IP changes
-  checkInterval: 300  # Check every 5 minutes
-  
-  # How long to wait before retrying after a failure
-  retryInterval: 60   # Wait 60 seconds between retry attempts
-  
-  # Maximum number of retries per attempt
-  maxRetries: 3      # Try up to 3 times if an attempt fails
-
-# Example retry scenario:
-# 1. IP check fails
-# 2. Wait 60 seconds (retryInterval)
-# 3. Try again, fails again
-# 4. Wait 60 seconds
-# 5. Try one last time
-# 6. If still failing, wait 5 minutes (checkInterval) and start over
+  checkInterval: 300   # how often to check, in seconds (default 300 = 5 min)
+  retryInterval: 60    # seconds to wait between failed lookup attempts
+  maxRetries: 3        # lookup attempts per check before waiting for the next interval
 
 notifications:
   telegram:
-    enabled: false    # Set to true to enable Telegram notifications
+    enabled: false
     botToken: "your-bot-token"
     chatId: "your-chat-id"
-    message: "IP address changed to: {ip}"
+    message: "IP address for {record} changed to: {ip}"   # supports {ip} and {record}
 
 logging:
-  level: "INFO"
-  file: "logs/dns-updater.log"
+  level: "INFO"                  # DEBUG, INFO, WARN, ERROR
+  file: "logs/clouddnsync.log"
   maxSize: "10MB"
   maxBackups: 5
-
-Telegram Setup
--------------
-1. Create a Telegram Bot:
-   * Open Telegram and search for @BotFather
-   * Send /newbot command
-   * Follow instructions to create your bot
-   * Choose a name for your bot (e.g., "My Home DNS Bot")
-   * Choose a username for your bot (must end in 'bot', e.g., "my_home_dns_bot")
-   * Save the HTTP API token provided (this is your botToken)
-   * The token looks like: "1234567890:ABCdefGHIjklMNOpqrsTUVwxyz"
-
-2. Get your Chat ID:
-   * Start a chat with your new bot
-   * Click the "Start" button or send "/start"
-   * Send any message to the bot
-   * Visit: https://api.telegram.org/bot<YOUR-BOT-TOKEN>/getUpdates
-   * Replace <YOUR-BOT-TOKEN> with the token from step 1
-   * Look for "chat":{"id":NUMBERS} in the response
-   * The chat ID will be a number like "123456789" (can be negative)
-   * Save this number (this is your chatId)
-
-3. Enable notifications:
-   * Edit /opt/dns-updater/config/config.yml
-   * Set notifications.telegram.enabled to true
-   * Add your botToken and chatId
-   * Customize the message if desired
-   * Message can include {ip} placeholder which will be replaced with the new IP
-   * Restart the service: sudo systemctl restart dns-updater
-
-Example configuration:
-```yaml
-notifications:
-  telegram:
-    enabled: true
-    botToken: "1234567890:ABCdefGHIjklMNOpqrsTUVwxyz"
-    chatId: "123456789"
-    message: "🏠 Home IP changed to: {ip}"
 ```
 
-Telegram Troubleshooting
-----------------------
-1. Bot not responding:
-   - Verify bot token is correct
-   - Make sure you started a chat with the bot
-   - Check if bot appears online in Telegram
+> **Backwards compatibility:** the older single-record format (`cloudflare.zoneId` /
+> `recordName` / `recordType` at the top level, without a `records:` list) is still
+> accepted and treated as one record.
 
-2. Not receiving notifications:
-   - Verify chatId is correct
-   - Check if notifications.telegram.enabled is true
-   - Look for Telegram-related errors in logs:
-     $ sudo tail -f /opt/dns-updater/logs/dns-updater.log | grep -i telegram
+### How updates work
 
-3. API errors:
-   - Test bot token: Visit https://api.telegram.org/bot<YOUR-BOT-TOKEN>/getMe
-   - Should return {"ok":true, ...}
-   - If not, token is invalid or bot was deleted
+On each interval the current public IP is looked up once per needed version (IPv4/IPv6). For every record, CloudDNSync compares against the **live Cloudflare record content** and only issues an update — and only sends a notification — when it actually differs. If a record does not exist yet, it is **created automatically** (TTL automatic, unproxied). If a lookup fails it retries up to `maxRetries` times, `retryInterval` seconds apart; if all attempts fail it logs the error and waits for the next interval. The service keeps running through network outages.
 
-4. Message formatting:
-   - Basic text and emojis are supported
-   - Avoid special characters in message template
-   - Test message format in Telegram before using
+## Option 1 — Docker (recommended)
 
-Service Management
-----------------
-Check Status:
-$ sudo systemctl status dns-updater
+```bash
+git clone https://github.com/kibukamusoke/cloudflare-dns-sync
+cd cloudflare-dns-sync
 
-Start/Stop/Restart:
-$ sudo systemctl start dns-updater    # Start service
-$ sudo systemctl stop dns-updater     # Stop service
-$ sudo systemctl restart dns-updater  # Restart service
+# Create your config from the example and edit it
+cp config/config.yml.example config/config.yml
+$EDITOR config/config.yml
 
-View Logs:
-$ sudo journalctl -u dns-updater -f           # View service logs
-$ sudo tail -f /opt/dns-updater/logs/dns-updater.log  # View application logs
+# Build and run
+docker compose up -d
+```
 
-Uninstallation
--------------
-To remove the service and all its files:
-$ sudo systemctl stop dns-updater
-$ sudo systemctl disable dns-updater
-$ sudo rm /etc/systemd/system/dns-updater.service
-$ sudo rm -rf /opt/dns-updater
-$ sudo systemctl daemon-reload
+- Your config is mounted read-only from `./config`; logs are written to `./logs`.
+- View logs: `docker compose logs -f`
+- Restart after editing config: `docker compose restart`
+- Stop: `docker compose down`
 
-Troubleshooting
---------------
-1. Service won't start:
-   - Check logs: sudo journalctl -u dns-updater -f
-   - Verify Java installation: java -version
-   - Ensure config.yml has correct permissions
-   - Verify Cloudflare credentials
+> Managing `AAAA` records requires the container to reach the IPv6 internet.
+> Uncomment `network_mode: host` in `docker-compose.yml` (and ensure your host
+> has IPv6) if you use them.
 
-2. DNS not updating:
-   - Check network connectivity
-   - Verify API token permissions
-   - Look for errors in /opt/dns-updater/logs/dns-updater.log
-   - Note: On network errors, the application will:
-     * Retry up to 3 times with 60-second intervals
-     * If all retries fail, wait 5 minutes and try again
-     * The service will keep running even during network outages
+## Option 2 — systemd (Linux)
 
-3. Permission issues:
-   - Check file ownership: ls -l /opt/dns-updater
-   - Ensure service user has access: sudo chown -R nobody:nogroup /opt/dns-updater
+Build from source (or download the release jar) and run the installer:
 
-Contributing
------------
-1. Fork the repository
-2. Create a feature branch
-3. Commit your changes
-4. Push to the branch
-5. Create a Pull Request
+```bash
+git clone https://github.com/kibukamusoke/cloudflare-dns-sync
+cd cloudflare-dns-sync
+mvn clean package
+sudo ./install.sh
+```
 
-License
--------
-This project is licensed under the MIT License - see the LICENSE file for details.
+The installer:
+- installs to `/opt/clouddnsync`,
+- prompts for one record plus optional Telegram settings (add more records afterwards by editing `/opt/clouddnsync/config/config.yml`),
+- creates and starts a `clouddnsync` systemd service.
 
-Acknowledgments
---------------
-- Uses Cloudflare API for DNS management
-- Built with Java 17
-- Uses Maven for dependency management 
+It prefers a locally built jar (`target/clouddnsync-1.0.0-jar-with-dependencies.jar` or `./clouddnsync.jar`) and falls back to downloading the release.
+
+### Service management
+
+```bash
+sudo systemctl status clouddnsync     # status
+sudo systemctl restart clouddnsync    # restart (e.g. after editing config)
+sudo systemctl stop clouddnsync       # stop
+sudo journalctl -u clouddnsync -f     # service logs
+sudo tail -f /opt/clouddnsync/logs/clouddnsync.log   # application logs
+```
+
+### Uninstall
+
+```bash
+sudo systemctl stop clouddnsync
+sudo systemctl disable clouddnsync
+sudo rm /etc/systemd/system/clouddnsync.service
+sudo rm -rf /opt/clouddnsync
+sudo systemctl daemon-reload
+```
+
+## Telegram notifications
+
+1. Create a bot with [@BotFather](https://t.me/BotFather) (`/newbot`) and copy the HTTP API token.
+2. Start a chat with your bot, send it a message, then visit
+   `https://api.telegram.org/bot<YOUR-BOT-TOKEN>/getUpdates` and read the
+   `chat.id` value.
+3. Set `notifications.telegram.enabled: true` and fill in `botToken` and `chatId`.
+4. The `message` template supports `{ip}` (the new address) and `{record}` (the record name).
+
+Restart the service/container after editing the config.
+
+## Running standalone
+
+```bash
+java -jar target/clouddnsync-1.0.0-jar-with-dependencies.jar [path/to/config.yml]
+java -jar target/clouddnsync-1.0.0-jar-with-dependencies.jar --version
+java -jar target/clouddnsync-1.0.0-jar-with-dependencies.jar --debug    # force DEBUG logging
+```
+
+## Troubleshooting
+
+- **Service won't start** — check `sudo journalctl -u clouddnsync -f`; verify `java -version` and that the config validates (a bad config prints the reason to stderr/journal on startup).
+- **DNS not updating** — confirm the API token has `Zone:DNS:Edit` on the right zone and the `zoneId`/`recordName` are correct. If the record doesn't exist, CloudDNSync creates it automatically; a failure to create usually means the token lacks edit permission on that zone. Check the logs.
+- **No Telegram messages** — verify `botToken`/`chatId`, that `enabled: true`, and look for `telegram` errors in the logs. Test the token at `https://api.telegram.org/bot<TOKEN>/getMe`.
+
+## License
+
+MIT — see [LICENSE](LICENSE).
+
+## Acknowledgments
+
+- Uses the Cloudflare API for DNS management
+- Built with Java 17 and Maven

@@ -1,7 +1,12 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <configuration>
-    <!-- Support for command line log level override -->
-    <property name="LOG_LEVEL" value="${logging.level.root:-INFO}" />
+    <!-- All values are supplied as system properties by the application from
+         config.yml (see DnsUpdaterApplication.applyLoggingConfig). The defaults
+         below apply when a value is missing or the app is run standalone. -->
+    <property name="LOG_LEVEL" value="${LOG_LEVEL:-INFO}" />
+    <property name="LOG_FILE" value="${LOG_FILE:-logs/clouddnsync.log}" />
+    <property name="LOG_MAX_SIZE" value="${LOG_MAX_SIZE:-10MB}" />
+    <property name="LOG_MAX_HISTORY" value="${LOG_MAX_HISTORY:-5}" />
 
     <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
         <encoder>
@@ -10,11 +15,11 @@
     </appender>
 
     <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
-        <file>logs/dns-updater.log</file>
+        <file>${LOG_FILE}</file>
         <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
-            <fileNamePattern>logs/dns-updater-%d{yyyy-MM-dd}.%i.log</fileNamePattern>
-            <maxFileSize>10MB</maxFileSize>
-            <maxHistory>30</maxHistory>
+            <fileNamePattern>${LOG_FILE}.%d{yyyy-MM-dd}.%i</fileNamePattern>
+            <maxFileSize>${LOG_MAX_SIZE}</maxFileSize>
+            <maxHistory>${LOG_MAX_HISTORY}</maxHistory>
             <totalSizeCap>1GB</totalSizeCap>
         </rollingPolicy>
         <encoder>
@@ -22,8 +27,13 @@
         </encoder>
     </appender>
 
+    <!-- Keep the HTTP client quiet even at DEBUG: its wire logging would
+         otherwise write the Cloudflare "Authorization: Bearer <token>" header
+         and Telegram bot token into the log file. -->
+    <logger name="org.apache.hc" level="WARN" />
+
     <root level="${LOG_LEVEL}">
         <appender-ref ref="CONSOLE" />
         <appender-ref ref="FILE" />
     </root>
-</configuration> 
+</configuration>

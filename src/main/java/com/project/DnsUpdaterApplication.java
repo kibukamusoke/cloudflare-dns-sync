@@ -3,46 +3,45 @@ package com.project;
 import com.project.cloudflare.CloudflareClient;
 import com.project.config.DnsUpdaterConfig;
 import com.project.core.IpMonitoringService;
+import com.project.ip.IcanhazipProvider;
 import com.project.ip.IpAddressProvider;
 import com.project.ip.IpifyProvider;
-import com.project.ip.IpApiProvider;
 import com.project.notifications.NotificationService;
+import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
+import org.apache.hc.client5.http.impl.classic.HttpClients;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.List;
 
 public class DnsUpdaterApplication {
-    private static final Logger logger = LoggerFactory.getLogger(DnsUpdaterApplication.class);
+    // NOTE: no static logger here on purpose. The logger is only obtained after
+    // applyLoggingConfig() has set the logback system properties, otherwise
+    // logging would initialise with default settings before config is read.
     private static final String DEFAULT_CONFIG_PATH = "config/config.yml";
     private static final String VERSION = "1.0.0";
 
     private volatile boolean isRunning = true;
 
-    private final DnsUpdaterConfig config;
+    private final Logger logger = LoggerFactory.getLogger(DnsUpdaterApplication.class);
+    private final CloseableHttpClient httpClient;
     private final IpMonitoringService monitoringService;
 
-    public DnsUpdaterApplication(String configPath) throws Exception {
-        // Load configuration
-        config = DnsUpdaterConfig.loadFromFile(configPath);
-        
-        // Create Cloudflare client
-        CloudflareClient cloudflareClient = new CloudflareClient(
-            config.getCloudflare().getApiToken(),
-            config.getCloudflare().getZoneId()
-        );
+    public DnsUpdaterApplication(DnsUpdaterConfig config) {
+        // One HTTP client shared across IP lookups, Cloudflare calls and notifications.
+        this.httpClient = HttpClients.createDefault();
 
-        // Create IP providers
+        CloudflareClient cloudflareClient = new CloudflareClient(httpClient);
+
         List<IpAddressProvider> ipProviders = List.of(
-            new IpifyProvider(),
-            new IpApiProvider()
+            new IpifyProvider(httpClient),
+            new IcanhazipProvider(httpClient)
         );
 
-        // Create notification service
-        NotificationService notificationService = new NotificationService(config);
+        NotificationService notificationService = new NotificationService(config, httpClient);
 
-        // Create monitoring service
-        monitoringService = new IpMonitoringService(ipProviders, cloudflareClient, config, notificationService);
+        this.monitoringService = new IpMonitoringService(
+            ipProviders, cloudflareClient, config, notificationService);
     }
 
     public void start() {
@@ -54,30 +53,46 @@ public class DnsUpdaterApplication {
         logger.info("Gracefully shutting down CloudDNSync");
         isRunning = false;
         monitoringService.stop();
+        try {
+            httpClient.close();
+        } catch (Exception e) {
+            logger.warn("Error closing HTTP client", e);
+        }
         logger.info("Shutdown complete");
     }
 
     public static void main(String[] args) {
-        // Check for version flag
-        if (args.length > 0 && args[0].equals("--version")) {
-            System.out.println("CloudDNSync version " + VERSION);
-            System.exit(0);
+        // Resolve flags and config path before any logging is initialised.
+        String configPath = System.getenv().getOrDefault("CONFIG_PATH", DEFAULT_CONFIG_PATH);
+        boolean debug = false;
+        for (String arg : args) {
+            if (arg.equals("--version")) {
+                System.out.println("CloudDNSync version " + VERSION);
+                return;
+            } else if (arg.equals("--debug")) {
+                debug = true;
+            } else if (!arg.startsWith("--")) {
+                configPath = arg;
+            }
         }
 
-        // Check for debug flag
-        if (args.length > 0 && args[0].equals("--debug")) {
-            System.setProperty("logging.level.root", "DEBUG");
+        DnsUpdaterConfig config;
+        try {
+            config = DnsUpdaterConfig.loadFromFile(configPath);
+            config.validate();
+        } catch (Exception e) {
+            // Logging isn't configured yet; print to stderr and bail out.
+            System.err.println("Failed to load configuration from " + configPath + ": " + e.getMessage());
+            System.exit(1);
+            return;
         }
+
+        applyLoggingConfig(config, debug);
+        Logger logger = LoggerFactory.getLogger(DnsUpdaterApplication.class);
 
         try {
-            String configPath = args.length > 0 ? args[0] : DEFAULT_CONFIG_PATH;
-            // Skip flags when looking for config path
-            if (configPath.startsWith("--")) {
-                configPath = DEFAULT_CONFIG_PATH;
-            }
-            DnsUpdaterApplication app = new DnsUpdaterApplication(configPath);
-            
-            // Add shutdown hook
+            DnsUpdaterApplication app = new DnsUpdaterApplication(config);
+
             Runtime.getRuntime().addShutdownHook(new Thread(() -> {
                 try {
                     app.stop();
@@ -85,16 +100,38 @@ public class DnsUpdaterApplication {
                     logger.error("Error during shutdown", e);
                 }
             }));
-            
+
             app.start();
 
-            // Keep main thread alive
             while (app.isRunning) {
                 Thread.sleep(1000);
             }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
         } catch (Exception e) {
             logger.error("Failed to start application", e);
             System.exit(1);
         }
     }
-} 
+
+    /**
+     * Feeds the logging config into logback via system properties. Must run
+     * before the first logger is created (see field note above).
+     */
+    private static void applyLoggingConfig(DnsUpdaterConfig config, boolean debug) {
+        DnsUpdaterConfig.LoggingConfig log = config.getLogging();
+        String level = debug ? "DEBUG" : log.getLevel();
+        setIfPresent("LOG_LEVEL", level);
+        setIfPresent("LOG_FILE", log.getFile());
+        setIfPresent("LOG_MAX_SIZE", log.getMaxSize());
+        if (log.getMaxBackups() > 0) {
+            System.setProperty("LOG_MAX_HISTORY", String.valueOf(log.getMaxBackups()));
+        }
+    }
+
+    private static void setIfPresent(String key, String value) {
+        if (value != null && !value.trim().isEmpty()) {
+            System.setProperty(key, value);
+        }
+    }
+}
